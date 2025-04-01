@@ -1555,6 +1555,7 @@ def stacked_bar_plot(dataframe,
                        bar_width=0.6,
                        xticks_fontcolor='black',
                        rotate_xticks=0.,
+                       add_percent_symbols_to_y_ticks=True,
                        ):
     # axs = plt.subplot(1, 2, 2,
     #                         # gridspec_kw=gridspec_kw,
@@ -1588,7 +1589,11 @@ def stacked_bar_plot(dataframe,
     
     
     ax.set_yticks(y_ticks,)
-    ax.yaxis.set_major_formatter(FuncFormatter(lambda val, pos: f'{val}%'))
+    if add_percent_symbols_to_y_ticks:
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda val, pos: f'{val}%'))
+    else:
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda val, pos: f'{val}'))
+     
     ax.yaxis.set_minor_locator(AutoMinorLocator(n_minor_ticks+1))
     
     
