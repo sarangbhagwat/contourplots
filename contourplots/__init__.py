@@ -18,6 +18,8 @@ animated_barplot = utils.animated_barplot
 box_and_whiskers_plot = utils.box_and_whiskers_plot
 stacked_bar_plot = utils.stacked_bar_plot
 animated_stacked_barplot = utils.animated_stacked_barplot
+tornado_plot_by_category = utils.tornado_plot_by_category
+ellipse_correlation_matrix_plot = utils.ellipse_correlation_matrix_plot
 
 __all__ = (
     'utils', 
@@ -26,4 +28,6 @@ __all__ = (
     'animated_stacked_barplot',
     'box_and_whiskers_plot', 
     'stacked_bar_plot',
+    'tornado_plot_by_category',
+    'ellipse_correlation_matrix_plot',
 )

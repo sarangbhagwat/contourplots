@@ -13,6 +13,8 @@ Created on Fri Nov 11 10:15:45 2022
 
 #%% Plot MPSP
 
+from __future__ import annotations
+
 import numpy as np
 from matplotlib import pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -27,6 +29,16 @@ import itertools
 from math import ceil, floor
 from scipy.ndimage.filters import gaussian_filter
 from scipy.ndimage import zoom
+
+from typing import Optional, Sequence, Dict, Tuple, List
+import pandas as pd
+from matplotlib.patches import Patch
+from matplotlib.colors import hsv_to_rgb
+
+
+from matplotlib.patches import Ellipse
+from matplotlib.collections import PatchCollection
+
 
 defaults_dict ={'colors':
                 {'Guest_Group_TEA_Breakdown': ['#7BBD84', '#F7C652', '#63C6CE', '#94948C', '#734A8C', '#D1C0E1', '#648496', '#B97A57', '#D1C0E1', '#F8858A', '#F8858A', ]}}
@@ -99,6 +111,7 @@ def animated_contourplot(w_data_vs_x_y_at_multiple_z, # shape = z * x * y
                                   cmap_over_color=None,
                                   cmap_under_color=None,
                                   label_over_color=None,
+                                  label_over_location=None,
                                   label_under_color=None,
                                   cbar_ticks=None,
                                   z_marker_color='b',
@@ -241,6 +254,7 @@ def animated_contourplot(w_data_vs_x_y_at_multiple_z, # shape = z * x * y
         
         x_data_i = np.ma.masked_where(~mask , x_data_i)
         y_data_i = np.ma.masked_where(~mask , y_data_i)
+        
         results_data_i = np.ma.masked_where(~mask , results_data_i)
         
         if gaussian_filter_smoothing:
@@ -394,6 +408,8 @@ def animated_contourplot(w_data_vs_x_y_at_multiple_z, # shape = z * x * y
         manual_clabels_regular_keys = list(manual_clabels_regular.keys())
         nonmanual_ticks_levels = [i for i in w_ticks if not i in manual_clabels_regular_keys]
         
+        if label_over_location: nonmanual_ticks_levels.remove(w_ticks[-1])
+        
         if manual_clabels_regular:
 
             #redraw relevant lines
@@ -449,11 +465,11 @@ def animated_contourplot(w_data_vs_x_y_at_multiple_z, # shape = z * x * y
                       colors='black',
                       inline_spacing=inline_spacing,
                       )
-        except:
-            pass
+        except Exception as e:
+            print(str(e))
         
         if label_over_color:
-            nonmanual_ticks_levels.remove(w_ticks[-1])
+            if w_ticks[-1] in nonmanual_ticks_levels: nonmanual_ticks_levels.remove(w_ticks[-1])
             location_from_auto_labeling = (clabs[-1]._x, clabs[-1]._y)
             #redraw relevant lines
             clines2 = ax.contour(x_data_i, y_data_i, results_data_i,
@@ -461,13 +477,14 @@ def animated_contourplot(w_data_vs_x_y_at_multiple_z, # shape = z * x * y
                         colors='black',
                        linewidths=w_tick_width)
             ## draw inline labels over both sets of lines
+            loc_over = label_over_location if label_over_location is not None else location_from_auto_labeling
             ax.clabel(clines2, 
                        [w_ticks[-1]],
                        fmt=fmt_clabel, 
                       fontsize=clabel_fontsize,
                       colors=label_over_color,
                       inline=True,
-                      manual=[location_from_auto_labeling],
+                      manual=[label_over_location or location_from_auto_labeling],
                       inline_spacing=inline_spacing,
                       )
         if label_under_color:
@@ -561,7 +578,8 @@ def animated_contourplot(w_data_vs_x_y_at_multiple_z, # shape = z * x * y
                             markersize=markersize, 
                             markerfacecolor=markercolor,
                               markeredgewidth=0.8,
-                             zorder=500)
+                             zorder=500,
+                             clip_on=False)
         
         if not add_shapes=={}:
             for coords, (shapecolor, shapezorder) in  add_shapes.items():
@@ -1776,7 +1794,484 @@ def stacked_bar_plot(dataframe,
     
     # plt.xlabel(list(df.columns), weight='bold')
 
-        
+
+#%% 
+
+def tornado_plot_by_category(
+    df: pd.DataFrame,
+    df_p: pd.DataFrame,
+    *,
+    name_col: str = "Name",
+    category_col: str = "Category",
+    value_col: str = "Value",
+    pvalue_col: str = "Value",          # <- allow same name as value_col (your case)
+    pvalue_threshold: Optional[float] = 0.05,
+    join_on_category: Optional[bool] = True,
+    show_legend: Optional[bool] = True,
+    category_colors: Optional[Dict[str, str]] = None,
+    figsize: Optional[Tuple[float, float]] = (9, 6),
+    title: Optional[str] = None,
+    xlabel: str = "Value",
+    show_values: bool = False,
+    value_fmt: str = "{:.2f}",
+    zero_line: bool = True,
+    xlim: Tuple[float, float] = (-1, 1),
+    add_minor_ticks: bool = True,
+    ax: Optional[plt.Axes] = None,
+) -> plt.Axes:
+    # --- validate df ---
+    required_df = {name_col, category_col, value_col}
+    missing_df = required_df - set(df.columns)
+    if missing_df:
+        raise ValueError(f"`df` is missing required columns: {sorted(missing_df)}")
+
+    # --- validate df_p ---
+    required_p = {name_col, pvalue_col} | ({category_col} if join_on_category else set())
+    missing_p = required_p - set(df_p.columns)
+    if missing_p:
+        raise ValueError(f"`df_p` is missing required columns: {sorted(missing_p)}")
+
+    # --- prepare main data ---
+    data = df[[name_col, category_col, value_col]].copy()
+    data[value_col] = pd.to_numeric(data[value_col], errors="coerce")
+    data = data.dropna(subset=[value_col])
+
+    # --- prepare p-values (only bring join keys + p-value column) ---
+    pval_tmp = "__pvalue__"  # unique internal name to avoid merge collisions
+    pdat_cols = [name_col] + ([category_col] if join_on_category else []) + [pvalue_col]
+    pdat = df_p[pdat_cols].copy()
+    pdat[pvalue_col] = pd.to_numeric(pdat[pvalue_col], errors="coerce")
+    pdat = pdat.dropna(subset=[pvalue_col])
+
+    # rename to avoid Value_x / Value_y when pvalue_col == value_col (or any collision)
+    pdat = pdat.rename(columns={pvalue_col: pval_tmp})
+
+    # --- merge p-values onto values ---
+    join_keys = [name_col] + ([category_col] if join_on_category else [])
+    merged = data.merge(pdat, on=join_keys, how="inner", validate="m:1")
+
+    # --- filter by significance ---
+    merged = merged[merged[pval_tmp] < pvalue_threshold].copy()
+    if merged.empty:
+        raise ValueError(
+            f"No rows remaining after filtering for p-values < {pvalue_threshold} "
+            f"(join_on_category={join_on_category})."
+        )
+
+    # --- sort for tornado plot ---
+    merged = merged.reindex(merged[value_col].abs().sort_values(ascending=False).index)
+
+    # --- styling ---
+    mpl.rcParams.update({
+        "font.family": "Arial",
+        "font.size": 12,
+        "axes.titlesize": 12,
+        "axes.labelsize": 12,
+        "xtick.labelsize": 12,
+        "ytick.labelsize": 12,
+        "legend.fontsize": 12,
+    })
+
+    cats = pd.Index(data[category_col].astype(str).unique())
+
+    if category_colors is None:
+        palette = saturated_distinct_colors(len(cats))
+        category_colors = {c: palette[i] for i, c in enumerate(cats)}
+    else:
+        missing = [c for c in cats if c not in category_colors]
+        if missing:
+            palette = saturated_distinct_colors(len(missing))
+            for i, c in enumerate(missing):
+                category_colors[c] = palette[i]
+
+    bar_colors = merged[category_col].astype(str).map(category_colors)
+
+    # --- plot ---
+    if ax is None:
+        _, ax = plt.subplots(figsize=figsize)
+
+    y = np.arange(len(merged))
+    ax.barh(y, merged[value_col].values, color=bar_colors.values, edgecolor="none")
+
+    ax.set_yticks(y)
+    ax.set_yticklabels(merged[name_col].astype(str).values)
+    ax.invert_yaxis()
+
+    if zero_line:
+        zero_color = ax.spines["bottom"].get_edgecolor()
+        ax.axvline(0, linewidth=1, color=zero_color)
+
+        tick_positions = ax.get_yticks()
+        x_min, x_max = ax.get_xlim()
+        tick_len = 0.02 * (x_max - x_min)
+
+        ax.hlines(
+            y=tick_positions,
+            xmin=0 - tick_len / 2,
+            xmax=0 + tick_len / 2,
+            colors=zero_color,
+            linewidth=1,
+            zorder=3,
+        )
+
+    ax.set_xlabel(xlabel)
+    if title:
+        ax.set_title(title)
+
+    ax.set_xlim(xlim)
+
+    from matplotlib.ticker import AutoMinorLocator
+
+    if add_minor_ticks:
+        ax.xaxis.set_minor_locator(AutoMinorLocator())
+
+    ax.tick_params(
+        axis="x",
+        which="both",
+        direction="inout",
+        top=True,
+        bottom=True,
+        labeltop=False
+    )
+    ax.tick_params(axis="y", which="major", direction="inout")
+
+    handles = [Patch(facecolor=category_colors[c], label=c) for c in cats]
+    
+    if show_legend:
+        ax.legend(handles=handles, title=category_col, loc="best", 
+                  facecolor='white', framealpha=1.)
+
+    if show_values:
+        values = merged[value_col].values
+        x_min, x_max = ax.get_xlim()
+        x_range = max(1e-9, (x_max - x_min))
+        offset = 0.01 * x_range
+
+        for yi, v in zip(y, values):
+            if v >= 0:
+                ax.text(v + offset, yi, value_fmt.format(v), va="center", ha="left")
+            else:
+                ax.text(v - offset, yi, value_fmt.format(v), va="center", ha="right")
+
+    ax.margins(y=0.02)
+    for spine in ax.spines.values():
+        spine.set_color("black")
+
+    ax.grid(axis="y", which="major", linewidth=0.8, alpha=0.25)
+    return ax
+
+
+#%%
+
+# 16 distinct default colors:
+# - first three are light grays (slightly different)
+# - remaining are vivid, high-saturation colors
+DEFAULT_CATEGORY_PALETTE_15: List[str] = [
+    "#F2F2F2",  # light gray 1
+    "#D9D9D9",  # light gray 2
+    "#BFBFBF",  # light gray 3
+    "#E41A1C",  # vivid red
+    "#377EB8",  # vivid blue
+    "#4DAF4A",  # vivid green
+    "#984EA3",  # vivid purple
+    "#A65628",  # vivid brown
+    "#FFFF33",  # vivid yellow
+    "#FF7F00",  # vivid orange
+    "#F781BF",  # vivid pink
+    "#00D5FF",  # vivid cyan
+    "#00C853",  # vivid emerald
+    "#FF00A8",  # vivid magenta
+    "#7CFF00",  # vivid lime
+    "#5A00FF",  # vivid deep violet
+]
+
+
+def ellipse_correlation_matrix_plot(
+    df: pd.DataFrame,
+    *,
+    param_col: str = "Parameter Name",
+    category_col: str = "Category Name",
+    corr_prefix: str = "Correlation for ",
+    metric_order: Optional[Sequence[str]] = None,
+    param_order: Optional[Sequence[str]] = None,
+    figsize: Optional[Tuple[float, float]] = None,
+
+    # Category coloring
+    category_palette: Optional[Sequence[str]] = None,   # NEW: override palette if desired
+
+    # Ellipse sizing in data units (each cell is 1x1)
+    min_scale: float = 0.3,
+    max_scale: float = 1.4,
+    aspect_ratio: float = 0.45,       # minor/major; lower => more elongated => tilt clearer
+    scale_to_abs_one: bool = True,
+    fit_padding: float = 0.96,
+
+    # Sign encoding via tilt (avoid ±90°, which look identical on ellipses)
+    positive_angle_deg: float = 45.0,
+    negative_angle_deg: float = -45.0,
+
+    # Threshold handling
+    small_corr_threshold: float = 0.05,
+    exclude_parameters_all_below_threshold: bool = True,
+    cross_scale: float = 0.1,         # cross arm half-length in data units (cell size is 1)
+    cross_linewidth: float = 0.1,
+    cross_color: str = "black",
+
+    # Visuals
+    edgecolor: str = "black",
+    edge_linewidth: float = 0.6,
+    face_alpha: float = 0.90,
+    show_values: bool = False,
+    value_fmt: str = "{:+.2f}",
+    grid: bool = True,
+    title: Optional[str] = None,
+    legend_max_cols: int = 4,
+    force_square_cells: bool = True,
+    ax: Optional[plt.Axes] = None,
+) -> plt.Axes:
+    """
+    Ellipse correlation matrix from a long-form dataframe:
+      - ellipse size encodes |correlation|
+      - ellipse color encodes parameter category (row parameter)
+      - ellipse tilt encodes sign: +angle for positive, -angle for negative
+      - if |correlation| < small_corr_threshold, draw a small cross instead of an ellipse
+      - if a parameter's max |corr| across ALL metrics is < threshold, drop that parameter row entirely
+
+    Legend categories are based on the ORIGINAL dataframe (before filtering).
+    """
+    mpl.rcParams.update({
+        "font.family": "Arial",
+        "font.size": 12,
+        "axes.titlesize": 12,
+        "axes.labelsize": 12,
+        "xtick.labelsize": 12,
+        "ytick.labelsize": 12,
+        "legend.fontsize": 12,
+    })
+    
+    # ---- Validate input ----
+    required = {param_col, category_col}
+    missing = required - set(df.columns)
+    if missing:
+        raise ValueError(f"Missing required columns: {sorted(missing)}")
+
+    corr_cols = [c for c in df.columns if isinstance(c, str) and c.startswith(corr_prefix)]
+    if not corr_cols:
+        raise ValueError(f"No correlation columns found starting with prefix {corr_prefix!r}")
+
+    # ---- Category list & color mapping from ORIGINAL df (pre-filter) ----
+    all_categories = list(pd.unique(df[category_col].astype(str)))
+    palette = list(category_palette) if category_palette is not None else DEFAULT_CATEGORY_PALETTE_15
+    if len(palette) == 0:
+        raise ValueError("category_palette must contain at least one color.")
+
+    cat_to_color: Dict[str, Tuple[float, float, float, float]] = {
+        cat: mpl.colors.to_rgba(palette[i % len(palette)])
+        for i, cat in enumerate(all_categories)
+    }
+
+    # ---- Optional filtering: drop parameters below threshold across all metrics ----
+    plot_df = df.copy()
+    if exclude_parameters_all_below_threshold:
+        tmp = plot_df[[param_col] + corr_cols].copy()
+        for c in corr_cols:
+            tmp[c] = pd.to_numeric(tmp[c], errors="coerce")
+        max_abs = tmp[corr_cols].abs().max(axis=1, skipna=True)
+        plot_df = plot_df.loc[max_abs >= float(small_corr_threshold)].copy()
+
+        if plot_df.empty:
+            raise ValueError(
+                f"After excluding parameters with max |corr| < {small_corr_threshold:g} across all metrics, "
+                "no parameters remain to plot."
+            )
+
+    # ---- Reshape to long form: Parameter x Metric -> Correlation ----
+    base = plot_df[[param_col, category_col] + corr_cols].copy()
+    metric_names = [c[len(corr_prefix):] for c in corr_cols]
+    base = base.rename(columns={c: metric_names[i] for i, c in enumerate(corr_cols)})
+
+    melted = base.melt(
+        id_vars=[param_col, category_col],
+        value_vars=metric_names,
+        var_name="Metric",
+        value_name="Correlation",
+    )
+    melted["Correlation"] = pd.to_numeric(melted["Correlation"], errors="coerce")
+
+    # Metric order
+    metrics = list(metric_order) if metric_order is not None else metric_names
+
+    # Parameter order (respect provided list, but keep only those present after filtering)
+    if param_order is not None:
+        present_params = set(melted[param_col])
+        params = [p for p in param_order if p in present_params]
+    else:
+        params = list(pd.unique(melted[param_col]))
+
+    melted = melted[melted["Metric"].isin(metrics) & melted[param_col].isin(params)].copy()
+    if melted.empty:
+        raise ValueError("No data remains to plot after applying metric/parameter ordering and filtering.")
+
+    # Map to grid positions
+    metric_to_x = {m: i for i, m in enumerate(metrics)}
+    param_to_y = {p: i for i, p in enumerate(params)}
+    melted["x"] = melted["Metric"].map(metric_to_x)
+    melted["y"] = melted[param_col].map(param_to_y)
+
+    plot_data = melted[melted["Correlation"].notna()].copy()
+    if plot_data.empty:
+        raise ValueError("All correlation values are NaN after conversion; nothing to plot.")
+
+    # Apply colors (from original mapping)
+    plot_data["_cat"] = plot_data[category_col].astype(str)
+    plot_data["_color"] = plot_data["_cat"].map(cat_to_color)
+
+    # ---- Figure/Axes ----
+    if ax is None:
+        if figsize is None:
+            w = max(6.0, 0.65 * len(metrics))
+            h = max(4.5, 0.50 * len(params))
+            figsize = (w, h)
+        fig, ax = plt.subplots(figsize=figsize)
+    else:
+        fig = ax.figure
+
+    ax.set_xlim(-0.5, len(metrics) - 0.5)
+    ax.set_ylim(-0.5, len(params) - 0.5)
+    ax.invert_yaxis()
+
+    ax.set_xticks(range(len(metrics)))
+    ax.set_xticklabels(metrics, rotation=45, ha="right")
+    ax.set_yticks(range(len(params)))
+    ax.set_yticklabels(params)
+
+    if force_square_cells:
+        ax.set_aspect("equal", adjustable="box")
+
+    if grid:
+        ax.set_axisbelow(True)
+        ax.grid(True, which="major", linestyle="-", linewidth=0.6, alpha=0.35)
+
+    if title is None:
+        if exclude_parameters_all_below_threshold:
+            title = (
+                f"Ellipse Correlation Matrix "
+                f"(rows with max |corr|<{small_corr_threshold:g} dropped; cells below shown as ×)"
+            )
+        else:
+            title = f"Ellipse Correlation Matrix (|corr|<{small_corr_threshold:g} shown as ×)"
+    ax.set_title(title)
+
+    # ---- Split into ellipses vs crosses (cell-level threshold) ----
+    abs_corr = plot_data["Correlation"].abs()
+    small_mask = abs_corr < float(small_corr_threshold)
+    big_df = plot_data.loc[~small_mask].copy()
+    small_df = plot_data.loc[small_mask].copy()
+
+    # ---- Draw ellipses for non-small cells ----
+    if not big_df.empty:
+        abs_corr_big = big_df["Correlation"].abs()
+
+        if scale_to_abs_one:
+            t = abs_corr_big.clip(0.0, 1.0)
+        else:
+            vmax = float(abs_corr_big.max(skipna=True))
+            if not np.isfinite(vmax) or np.isclose(vmax, 0.0):
+                t = abs_corr_big * 0.0
+            else:
+                t = (abs_corr_big / vmax).clip(0.0, 1.0)
+
+        max_s = float(max_scale) * float(fit_padding)
+        min_s = float(min_scale)
+
+        major = min_s + t * max(0.0, (max_s - min_s))
+        minor = major * float(aspect_ratio)
+
+        patches = []
+        facecolors = []
+        for (_, row), maj, minr in zip(big_df.iterrows(), major.values, minor.values):
+            angle = positive_angle_deg if row["Correlation"] >= 0 else negative_angle_deg
+            e = Ellipse(
+                (float(row["x"]), float(row["y"])),
+                width=float(minr),
+                height=float(maj),
+                angle=float(angle),
+            )
+            patches.append(e)
+
+            r, g, b, _ = row["_color"]
+            facecolors.append((r, g, b, float(face_alpha)))
+
+        coll = PatchCollection(
+            patches,
+            match_original=False,
+            facecolor=facecolors,
+            edgecolor=edgecolor,
+            linewidth=edge_linewidth,
+            clip_on=True,
+        )
+        ax.add_collection(coll)
+
+    # ---- Draw crosses for small cells ----
+    if not small_df.empty:
+        h = float(cross_scale)
+        for _, row in small_df.iterrows():
+            x = float(row["x"])
+            y = float(row["y"])
+            ax.plot([x - h, x + h], [y - h, y + h],
+                    color=cross_color, linewidth=cross_linewidth, solid_capstyle="round")
+            ax.plot([x - h, x + h], [y + h, y - h],
+                    color=cross_color, linewidth=cross_linewidth, solid_capstyle="round")
+
+    # ---- Optional numeric labels ----
+    if show_values:
+        for _, row in plot_data.iterrows():
+            ax.text(
+                row["x"], row["y"],
+                value_fmt.format(float(row["Correlation"])),
+                ha="center", va="center",
+                fontsize=8, color="black",
+            )
+
+    # ---- Legend: categories from ORIGINAL df + cross key ----
+    handles = [
+        mpl.lines.Line2D(
+            [0], [0],
+            marker="o",
+            linestyle="",
+            markersize=9,
+            markerfacecolor=cat_to_color[cat],
+            markeredgecolor="black",
+            label=str(cat),
+        )
+        for cat in all_categories
+    ]
+    handles.append(
+        mpl.lines.Line2D(
+            [0], [0],
+            marker="x",
+            linestyle="",
+            markersize=9,
+            markeredgewidth=cross_linewidth,
+            color=cross_color,
+            label=f"|corr| < {small_corr_threshold:g} (cell)",
+        )
+    )
+
+    ncol = min(legend_max_cols, max(1, len(handles)))
+    ax.legend(
+        handles=handles,
+        title="Category / Threshold",
+        loc="upper left",
+        bbox_to_anchor=(1.02, 1.0),
+        borderaxespad=0.0,
+        frameon=True,
+        ncol=ncol,
+    )
+
+    fig.tight_layout()
+    return ax
+
 #%% Miscellaneous
 def Round_off(N, n): # function Round_off from https://www.geeksforgeeks.org/round-off-number-given-number-significant-digits/#
     b = N
@@ -1845,3 +2340,11 @@ def get_rounded_str(num, sig_figs):
     else:
         rounded_str = convert_OOM_notation_e_to_10_in_str_num(f'{num:.{sig_figs}g}')
     return rounded_str
+
+def saturated_distinct_colors(n: int, s: float = 0.75, v: float = 0.85):
+    """Generate n distinct, saturated RGB colors by sweeping hue."""
+    if n <= 0:
+        return []
+    hues = np.linspace(0, 1, n, endpoint=False)
+    hsv = np.column_stack([hues, np.full(n, s), np.full(n, v)])
+    return [tuple(c) for c in hsv_to_rgb(hsv)]
