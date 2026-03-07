@@ -129,7 +129,8 @@ def animated_contourplot(w_data_vs_x_y_at_multiple_z, # shape = z * x * y
                                   cbar_n_minor_ticks = 4,
                                   comparison_range=[],
                                   comparison_range_hatch_pattern='///',
-                                  
+                                  comparison_range_rgba=(1, 1, 1, 0.25), # (r, g, b, alpha)
+                                  comparison_range_cbar_rgba=(1, 1, 1, 0.4), # (r, g, b, alpha)
                                   comparison_lines = [],
                                   comparison_lines_colors='white',
                                   
@@ -378,12 +379,11 @@ def animated_contourplot(w_data_vs_x_y_at_multiple_z, # shape = z * x * y
         
         # ########--########
         
-        comparison_rgba = (1, 1, 1, 0.5)   # white, alpha 0.5
         comparison_range_zorder = 400
         
         if not list(comparison_range)==[]:
             with mpl.rc_context({
-                'hatch.color': comparison_rgba,
+                'hatch.color': comparison_range_rgba,
                 'hatch.linewidth': 0.6,
             }):
                 cs = ax.contourf(
@@ -398,7 +398,7 @@ def animated_contourplot(w_data_vs_x_y_at_multiple_z, # shape = z * x * y
         
             for coll in cs.collections:
                 coll.set_facecolor((1, 1, 1, 0.0))
-                coll.set_edgecolor(comparison_rgba)
+                coll.set_edgecolor(comparison_range_rgba)
                 coll.set_linewidth(0.6)
                 coll.set_zorder(comparison_range_zorder)
                 coll.set_alpha(None)   # important: don't override RGBA alpha
@@ -438,6 +438,7 @@ def animated_contourplot(w_data_vs_x_y_at_multiple_z, # shape = z * x * y
                       inline=True,
                       manual=[manual_clabels_regular[i] for i in manual_clabels_regular_keys],
                       inline_spacing=inline_spacing,
+                      zorder=500,
                       )
         
             
@@ -475,6 +476,7 @@ def animated_contourplot(w_data_vs_x_y_at_multiple_z, # shape = z * x * y
                       fontsize=clabel_fontsize,
                       colors='black',
                       inline_spacing=inline_spacing,
+                      zorder=500,
                       )
         except Exception as e:
             print(str(e))
@@ -497,6 +499,7 @@ def animated_contourplot(w_data_vs_x_y_at_multiple_z, # shape = z * x * y
                       inline=True,
                       manual=[label_over_location or location_from_auto_labeling],
                       inline_spacing=inline_spacing,
+                      zorder=500,
                       )
         if label_under_color:
             nonmanual_ticks_levels.remove(w_ticks[0])
@@ -515,6 +518,7 @@ def animated_contourplot(w_data_vs_x_y_at_multiple_z, # shape = z * x * y
                       inline=True,
                       manual=[location_from_auto_labeling],
                       inline_spacing=inline_spacing,
+                      zorder=500,
                       )
         try:
             if not list(comparison_range)==[]:
@@ -523,7 +527,7 @@ def animated_contourplot(w_data_vs_x_y_at_multiple_z, # shape = z * x * y
                     y_data_i,
                     results_data_i,
                     levels=comparison_range,
-                    colors=[comparison_rgba],
+                    colors=[comparison_range_rgba],
                     linewidths=w_tick_width,
                     zorder=comparison_range_zorder + 1,
                 )
@@ -536,6 +540,7 @@ def animated_contourplot(w_data_vs_x_y_at_multiple_z, # shape = z * x * y
                               colors='black',
                               manual=[manual_clabels_comparison_range[i] for i in comparison_range],
                               inline_spacing=inline_spacing,
+                              zorder=500,
                               )
                 else:
                     ax.clabel(clines3, 
@@ -544,6 +549,7 @@ def animated_contourplot(w_data_vs_x_y_at_multiple_z, # shape = z * x * y
                               fontsize=clabel_fontsize,
                               colors='black',
                               inline_spacing=inline_spacing,
+                              zorder=500,
                               )
         except:
             pass
@@ -568,7 +574,8 @@ def animated_contourplot(w_data_vs_x_y_at_multiple_z, # shape = z * x * y
             text_boxes_keys = list(text_boxes.keys())
             for i in text_boxes_keys:
                 (xpos, ypos), textcolor = text_boxes[i]
-                ax.text(xpos, ypos, i, color=textcolor, fontsize=clabel_fontsize)
+                ax.text(xpos, ypos, i, color=textcolor, fontsize=clabel_fontsize, 
+                zorder=500,)
         
         if additional_vlines:
             ax.vlines(additional_vlines, y_ticks[0], y_ticks[-1], linewidth=1, 
@@ -612,6 +619,7 @@ def animated_contourplot(w_data_vs_x_y_at_multiple_z, # shape = z * x * y
                       fontsize=clabel_fontsize,
                       colors=comparison_lines_colors,
                       inline_spacing=inline_spacing,
+                      zorder=500,
                       )
                       
         
@@ -675,16 +683,23 @@ def animated_contourplot(w_data_vs_x_y_at_multiple_z, # shape = z * x * y
             # plt.rcParams['hatch.linewidth'] = 0.6
             # plt.rcParams['hatch.color'] = 'white'
             if not list(comparison_range)==[]:
-                cbar_patch = cbar.ax.fill_betweenx(
-                    comparison_range,
-                    -1, 2,
-                    facecolor=(1, 1, 1, 0),   # transparent fill
-                    hatch=comparison_range_hatch_pattern,
-                    linewidth=0.6,
-                    edgecolor=comparison_rgba,
-                    zorder=10,
-                )
-                cbar_patch.set_alpha(0.5)
+                with mpl.rc_context({
+                    'hatch.color': comparison_range_rgba,
+                    'hatch.linewidth': 0.6,
+                }):
+                    cbar_patch = cbar.ax.fill_betweenx(
+                        comparison_range,
+                        -1, 2,
+                        facecolor='none',
+                        edgecolor=comparison_range_cbar_rgba,
+                        hatch=comparison_range_hatch_pattern,
+                        linewidth=0.6,
+                        zorder=10,
+                    )
+                
+                cbar_patch.set_facecolor((1, 1, 1, 0))   # no fill
+                cbar_patch.set_edgecolor(comparison_range_cbar_rgba) # keep hatch/border at alpha 0.5
+                cbar_patch.set_alpha(None)
         
         ax.set_title(' ', fontsize=gap_between_figures)
 
