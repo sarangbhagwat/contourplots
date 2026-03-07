@@ -38,6 +38,7 @@ from matplotlib.colors import hsv_to_rgb
 
 from matplotlib.patches import Ellipse
 from matplotlib.collections import PatchCollection
+from matplotlib.lines import Line2D
 
 
 defaults_dict ={'colors':
@@ -377,20 +378,30 @@ def animated_contourplot(w_data_vs_x_y_at_multiple_z, # shape = z * x * y
         
         # ########--########
         
-        if not list(comparison_range)==[]:
-            [m1,n1] = np.where((results_data_i > comparison_range[0]) & (results_data_i < comparison_range[1]))
-            # [m2,n2] = np.where(results_data_i < 7.5)
-            
-            z1 = np.zeros(results_data_i.shape)
-            z1[m1,n1] = 99
-            
-            # print(z1,)
-            plt.rcParams['hatch.linewidth'] = 0.6
-            plt.rcParams['hatch.color'] = 'white'
-            cs = ax.contourf(x_data_i, y_data_i, z1 ,1 , hatches=['', comparison_range_hatch_pattern],  alpha=0.,
-                             # extend=extend_cmap,
-                             )
+        comparison_rgba = (1, 1, 1, 0.5)   # white, alpha 0.5
+        comparison_range_zorder = 400
         
+        if not list(comparison_range)==[]:
+            with mpl.rc_context({
+                'hatch.color': comparison_rgba,
+                'hatch.linewidth': 0.6,
+            }):
+                cs = ax.contourf(
+                    x_data_i,
+                    y_data_i,
+                    results_data_i,
+                    levels=comparison_range,                 # one hatched band
+                    colors=[(1, 1, 1, 0.0)],                # transparent fill, but real patch
+                    hatches=[comparison_range_hatch_pattern],
+                    zorder=comparison_range_zorder,
+                )
+        
+            for coll in cs.collections:
+                coll.set_facecolor((1, 1, 1, 0.0))
+                coll.set_edgecolor(comparison_rgba)
+                coll.set_linewidth(0.6)
+                coll.set_zorder(comparison_range_zorder)
+                coll.set_alpha(None)   # important: don't override RGBA alpha
             
         # clines = ax.contour(x_data_i, y_data_i, results_data_i,
         #            levels=w_ticks,
@@ -507,12 +518,15 @@ def animated_contourplot(w_data_vs_x_y_at_multiple_z, # shape = z * x * y
                       )
         try:
             if not list(comparison_range)==[]:
-                clines3 = ax.contour(x_data_i, y_data_i, results_data_i,
-                           levels=comparison_range,
-                            colors='white',
-                           linewidths=w_tick_width,
-                           # zorder=199,
-                           )
+                clines3 = ax.contour(
+                    x_data_i,
+                    y_data_i,
+                    results_data_i,
+                    levels=comparison_range,
+                    colors=[comparison_rgba],
+                    linewidths=w_tick_width,
+                    zorder=comparison_range_zorder + 1,
+                )
                 
                 if manual_clabels_comparison_range:
                     ax.clabel(clines3, 
@@ -660,16 +674,17 @@ def animated_contourplot(w_data_vs_x_y_at_multiple_z, # shape = z * x * y
                 )
             # plt.rcParams['hatch.linewidth'] = 0.6
             # plt.rcParams['hatch.color'] = 'white'
-            cbar.ax.fill_betweenx(comparison_range,
-                                  # cbar.ax.get_xlim()[0],cbar.ax.get_xlim()[1],
-                                  -1, 2,
-                               facecolor='none', 
-                               hatch=comparison_range_hatch_pattern,
-                                # zorder=200,
-                                linewidth=0.6,
-                                edgecolor='white',
-                               # alpha=0.,
-                               )
+            if not list(comparison_range)==[]:
+                cbar_patch = cbar.ax.fill_betweenx(
+                    comparison_range,
+                    -1, 2,
+                    facecolor=(1, 1, 1, 0),   # transparent fill
+                    hatch=comparison_range_hatch_pattern,
+                    linewidth=0.6,
+                    edgecolor=comparison_rgba,
+                    zorder=10,
+                )
+                cbar_patch.set_alpha(0.5)
         
         ax.set_title(' ', fontsize=gap_between_figures)
 
@@ -727,7 +742,7 @@ def animated_contourplot(w_data_vs_x_y_at_multiple_z, # shape = z * x * y
             frames.append(image)
         
         
-        if keep_gifs:
+        if keep_gifs and len(z_data)>1:
             if n_loops==('inf' or 'infinite' or 'infinity' or np.inf):
                 imageio.mimsave('./' + animated_contourplot_filename + '.gif',
                                 frames,
@@ -1970,8 +1985,9 @@ DEFAULT_CATEGORY_PALETTE_15: List[str] = [
     "#F2F2F2",  # light gray 1
     "#D9D9D9",  # light gray 2
     "#BFBFBF",  # light gray 3
-    "#E41A1C",  # vivid red
+    "#635D5B",  # darker gray 1
     "#377EB8",  # vivid blue
+    "#E41A1C",  # vivid red
     "#4DAF4A",  # vivid green
     "#984EA3",  # vivid purple
     "#A65628",  # vivid brown
@@ -1979,7 +1995,7 @@ DEFAULT_CATEGORY_PALETTE_15: List[str] = [
     "#FF7F00",  # vivid orange
     "#F781BF",  # vivid pink
     "#00D5FF",  # vivid cyan
-    "#00C853",  # vivid emerald
+    # "#00C853",  # vivid emerald
     "#FF00A8",  # vivid magenta
     "#7CFF00",  # vivid lime
     "#5A00FF",  # vivid deep violet
@@ -2272,8 +2288,47 @@ def ellipse_correlation_matrix_plot(
     fig.tight_layout()
     return ax
 
+#%% Legend for markers given dict
+def marker_legend(ax, marker_specs, **legend_kwargs):
+    """
+    Add a matplotlib legend from a mapping like:
+        {
+            "Label A": ("o", "red", 8.0),
+            "Label B": ("s", "blue", 10.0),
+        }
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        The axes to add the legend to.
+    marker_specs : dict[str, tuple[str, str, float]]
+        Maps legend label -> (marker_shape, marker_color, marker_size)
+    **legend_kwargs
+        Extra keyword args passed to ax.legend(...)
+
+    Returns
+    -------
+    matplotlib.legend.Legend
+        The created legend.
+    """
+    handles = []
+
+    for label, (marker_shape, marker_color, marker_size) in marker_specs.items():
+        handle = Line2D(
+            [0], [0],
+            linestyle="None",
+            marker=marker_shape,
+            markersize=marker_size,
+            markerfacecolor=marker_color,
+            markeredgecolor='black',
+            label=label,
+        )
+        handles.append(handle)
+
+    return ax.legend(handles=handles, **legend_kwargs)
+
 #%% Miscellaneous
-def Round_off(N, n): # function Round_off from https://www.geeksforgeeks.org/round-off-number-given-number-significant-digits/#
+def round_off(N, n): # function round_off from https://www.geeksforgeeks.org/round-off-number-given-number-significant-digits/#
     b = N
     # c = floor(N)
     # Counting the no. of digits 
@@ -2330,8 +2385,8 @@ def convert_OOM_notation_e_to_10_in_str_num(str_num):
     return str_num
 
 def get_rounded_str(num, sig_figs):
-    # rounded_str = remove_ending_decimal_point(remove_ending_0(str(Round_off(num,sig_figs))))
-    rounded_str = remove_ending_0(str(Round_off(num,sig_figs)))
+    # rounded_str = remove_ending_decimal_point(remove_ending_0(str(round_off(num,sig_figs))))
+    rounded_str = remove_ending_0(str(round_off(num,sig_figs)))
     n_digits = count_no_of_digits_in_str_num(rounded_str)
     if n_digits<sig_figs:
         while not n_digits==sig_figs:

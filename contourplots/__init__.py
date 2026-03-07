@@ -20,6 +20,8 @@ stacked_bar_plot = utils.stacked_bar_plot
 animated_stacked_barplot = utils.animated_stacked_barplot
 tornado_plot_by_category = utils.tornado_plot_by_category
 ellipse_correlation_matrix_plot = utils.ellipse_correlation_matrix_plot
+round_off = utils.round_off
+marker_legend = utils.marker_legend
 
 __all__ = (
     'utils', 
@@ -30,4 +32,6 @@ __all__ = (
     'stacked_bar_plot',
     'tornado_plot_by_category',
     'ellipse_correlation_matrix_plot',
+    'marker_legend',
+    'round_off',
 )
