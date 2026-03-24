@@ -127,10 +127,14 @@ def animated_contourplot(w_data_vs_x_y_at_multiple_z, # shape = z * x * y
                                   keep_gifs=True, # saves GIF files; True by default
                                   n_minor_ticks = 1,
                                   cbar_n_minor_ticks = 4,
+                                  
                                   comparison_range=[],
                                   comparison_range_hatch_pattern='///',
                                   comparison_range_rgba=(1, 1, 1, 0.25), # (r, g, b, alpha)
                                   comparison_range_cbar_rgba=(1, 1, 1, 0.4), # (r, g, b, alpha)
+                                  comparison_range_clabel_color='white',
+                                  show_comparison_range_clabels=True,
+                                  
                                   comparison_lines = [],
                                   comparison_lines_colors='white',
                                   
@@ -158,6 +162,7 @@ def animated_contourplot(w_data_vs_x_y_at_multiple_z, # shape = z * x * y
                                   fill_bottom_with_cmap_over_color=False,
                                   bottom_fill_bounds=None,
                                   add_shapes = {},
+                                  add_lines = {}, # dict of keys = tuple of y_data values and value = kwargs for plt.plot
                                   round_xticks_to=1,
                                   round_yticks_to=0,
                                   inline_spacing=5.,
@@ -165,7 +170,9 @@ def animated_contourplot(w_data_vs_x_y_at_multiple_z, # shape = z * x * y
                                   include_cbar=True,
                                   include_axis_labels=True,
                                   include_x_axis_ticklabels=True,
+                                  include_last_x_axis_ticklabel=True,
                                   include_y_axis_ticklabels=True,
+                                  include_last_y_axis_ticklabel=True,
                                   show_top_ticklabels=True,
                                   fig_ax_to_use=None, # only used when include_top_bar is False. If fig_ax_to_use is provided, images and gifs are not saved.
                                   ):
@@ -481,7 +488,7 @@ def animated_contourplot(w_data_vs_x_y_at_multiple_z, # shape = z * x * y
         except Exception as e:
             print(str(e))
         
-        if label_over_color:
+        if label_over_color and max(w_levels) in w_ticks:
             if w_ticks[-1] in nonmanual_ticks_levels: nonmanual_ticks_levels.remove(w_ticks[-1])
             location_from_auto_labeling = (clabs[-1]._x, clabs[-1]._y)
             #redraw relevant lines
@@ -532,25 +539,27 @@ def animated_contourplot(w_data_vs_x_y_at_multiple_z, # shape = z * x * y
                     zorder=comparison_range_zorder + 1,
                 )
                 
-                if manual_clabels_comparison_range:
-                    ax.clabel(clines3, 
-                               comparison_range,
-                               fmt=fmt_clabel, 
-                              fontsize=clabel_fontsize,
-                              colors='black',
-                              manual=[manual_clabels_comparison_range[i] for i in comparison_range],
-                              inline_spacing=inline_spacing,
-                              zorder=500,
-                              )
-                else:
-                    ax.clabel(clines3, 
-                               comparison_range,
-                               fmt=fmt_clabel, 
-                              fontsize=clabel_fontsize,
-                              colors='black',
-                              inline_spacing=inline_spacing,
-                              zorder=500,
-                              )
+                
+                if show_comparison_range_clabels:
+                    if manual_clabels_comparison_range:
+                        ax.clabel(clines3, 
+                                   comparison_range,
+                                   fmt=fmt_clabel, 
+                                  fontsize=clabel_fontsize,
+                                  colors=comparison_range_clabel_color,
+                                  manual=[manual_clabels_comparison_range[i] for i in comparison_range],
+                                  inline_spacing=inline_spacing,
+                                  zorder=500,
+                                  )
+                    else:
+                        ax.clabel(clines3, 
+                                   comparison_range,
+                                   fmt=fmt_clabel, 
+                                  fontsize=clabel_fontsize,
+                                  colors=comparison_range_clabel_color,
+                                  inline_spacing=inline_spacing,
+                                  zorder=500,
+                                  )
         except:
             pass
         
@@ -603,10 +612,13 @@ def animated_contourplot(w_data_vs_x_y_at_multiple_z, # shape = z * x * y
                              clip_on=False)
         
         if not add_shapes=={}:
-            for coords, (shapecolor, shapezorder) in  add_shapes.items():
-                t1 = plt.Polygon(coords, color=shapecolor, zorder=shapezorder)
+            for coords, kwargs in add_shapes.items():
+                t1 = plt.Polygon(coords, **kwargs)
                 ax.add_patch(t1,)
-                
+        
+        if not add_lines=={}:
+            for line, kwargs in add_lines.items():
+                ax.plot(x_data, line, **kwargs)
         if not list(comparison_lines)==[]:
             
             cs = ax.contour(x_data_i, y_data_i, results_data_i,
@@ -725,6 +737,12 @@ def animated_contourplot(w_data_vs_x_y_at_multiple_z, # shape = z * x * y
             yticks_new = [round_to(i,round_yticks_to) for i in y_ticks.copy()]
             yticks_new[-1] = ''
             ax.set_yticklabels(yticks_new)
+        
+        if not include_last_x_axis_ticklabel:
+            ax.xaxis.get_majorticklabels()[-1].set_visible(False)
+        
+        if not include_last_y_axis_ticklabel:
+            ax.yaxis.get_majorticklabels()[-1].set_visible(False)
             
         if not include_x_axis_ticklabels:
             ax.set_xticklabels([])
@@ -745,10 +763,12 @@ def animated_contourplot(w_data_vs_x_y_at_multiple_z, # shape = z * x * y
         
     
     fig_list, axs_list = [], []
-    for z_index in range(len(z_data)):
-        fig, axs = create_frame(z_index)
-        fig_list.append(fig)
-        axs_list.append(axs)
+    
+    if keep_gifs:
+        for z_index in range(len(z_data)):
+            fig, axs = create_frame(z_index)
+            fig_list.append(fig)
+            axs_list.append(axs)
     
     if fig_ax_to_use is None:
         frames = []
@@ -2059,6 +2079,9 @@ def ellipse_correlation_matrix_plot(
     legend_max_cols: int = 4,
     force_square_cells: bool = True,
     ax: Optional[plt.Axes] = None,
+    
+    format_kinetic_param_names: bool = False,
+    
 ) -> plt.Axes:
     """
     Ellipse correlation matrix from a long-form dataframe:
@@ -2072,12 +2095,12 @@ def ellipse_correlation_matrix_plot(
     """
     mpl.rcParams.update({
         "font.family": "Arial",
-        "font.size": 12,
-        "axes.titlesize": 12,
-        "axes.labelsize": 12,
-        "xtick.labelsize": 12,
-        "ytick.labelsize": 12,
-        "legend.fontsize": 12,
+        "font.size": 14,
+        "axes.titlesize": 14,
+        "axes.labelsize": 14,
+        "xtick.labelsize": 14,
+        "ytick.labelsize": 14,
+        "legend.fontsize": 14,
     })
     
     # ---- Validate input ----
@@ -2138,7 +2161,8 @@ def ellipse_correlation_matrix_plot(
         params = [p for p in param_order if p in present_params]
     else:
         params = list(pd.unique(melted[param_col]))
-
+    
+                
     melted = melted[melted["Metric"].isin(metrics) & melted[param_col].isin(params)].copy()
     if melted.empty:
         raise ValueError("No data remains to plot after applying metric/parameter ordering and filtering.")
@@ -2174,7 +2198,22 @@ def ellipse_correlation_matrix_plot(
     ax.set_xticks(range(len(metrics)))
     ax.set_xticklabels(metrics, rotation=45, ha="right")
     ax.set_yticks(range(len(params)))
-    ax.set_yticklabels(params)
+    
+    params_for_y_ticks = [i for i in params]
+    # Format kinetic param labels
+    if format_kinetic_param_names:
+        for i in range(len(params_for_y_ticks)):
+            param = params_for_y_ticks[i]
+            if '. k' in param:
+                param_subscript = param[(param.index('. k')+len('. k')+1):]
+                param = r"${k}_{" + param_subscript + "}$"
+                params_for_y_ticks[i] = param
+            elif 'K ' in param:
+                param_subscript = param[(param.index('K ')+len('K ')):]
+                param = r"${K}_{" + param_subscript + "}$"
+                params_for_y_ticks[i] = param
+                
+    ax.set_yticklabels(params_for_y_ticks)
 
     if force_square_cells:
         ax.set_aspect("equal", adjustable="box")
