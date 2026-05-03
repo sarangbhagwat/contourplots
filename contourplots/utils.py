@@ -764,11 +764,10 @@ def animated_contourplot(w_data_vs_x_y_at_multiple_z, # shape = z * x * y
     
     fig_list, axs_list = [], []
     
-    if keep_gifs:
-        for z_index in range(len(z_data)):
-            fig, axs = create_frame(z_index)
-            fig_list.append(fig)
-            axs_list.append(axs)
+    for z_index in range(len(z_data)):
+        fig, axs = create_frame(z_index)
+        fig_list.append(fig)
+        axs_list.append(axs)
     
     if fig_ax_to_use is None:
         frames = []
